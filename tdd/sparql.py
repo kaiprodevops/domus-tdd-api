@@ -223,6 +223,7 @@ def query(
 
     if route != "":
         sparqlendpoint = urljoin(f"{sparqlendpoint}/", route)
+
     if request_type == "query":
         # Utilize the global HTTP client for connection pooling.
         resp = http_client.post(
@@ -230,7 +231,7 @@ def query(
             data={"query": querystring},
             headers=headers,
         )
-    if request_type == "update":
+    elif request_type == "update":
         if CONFIG["ENDPOINT_TYPE"] == "GRAPHDB":
             sparqlendpoint = urljoin(f"{sparqlendpoint}/", "statements")
         # Utilize the global HTTP client for update operations to maintain low latency.
@@ -238,6 +239,8 @@ def query(
             sparqlendpoint,
             data={"update": querystring},
         )
+    else:
+        raise ValueError(f"Invalid request_type: {request_type}")
 
     if resp.status_code not in status_codes:
         raise FusekiError(resp)

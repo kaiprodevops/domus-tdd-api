@@ -42,10 +42,10 @@ def validate_uris(uris: List[str]) -> List[str]:
 
 
 def validate_sort_order(sort_order: Optional[str]) -> str:
-    """
-    Enforces a strict allowlist for sorting order to prevent injection in ORDER BY clauses.
-    """
-    if sort_order and sort_order.upper() not in ["ASC", "DESC"]:
-        logger.warning(f"SECURITY ALERT: Invalid sort order blocked: {sort_order}")
-        raise SecurityValidationError("Invalid sort order detected.")
-    return sort_order.upper() if sort_order else "ASC"
+    if not sort_order:
+        return ""
+
+    normalized_order = sort_order.strip().upper()
+    if normalized_order not in ["ASC", "DESC"]:
+        raise SecurityValidationError("Invalid sort order.")
+    return normalized_order

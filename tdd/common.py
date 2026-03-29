@@ -112,6 +112,7 @@ def frame_nt_content(nt_content, frame):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
+            encoding="utf-8",
         )
         p.stdin.write(input_data)
         p.stdin.flush()

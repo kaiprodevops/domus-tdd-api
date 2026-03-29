@@ -349,7 +349,7 @@ def get_paginated_tds(limit, offset, sort_by, sort_order):
     if sort_by is not None and sort_by not in ORDERBY:
         raise OrderbyError(sort_by)
 
-    # Upstream validation: Enforce strict allowlist for sort_order (ASC/DESC)
+    # Upstream validation: Enforce strict allowlist for sort_order
     safe_sort_order = validate_sort_order(sort_order)
 
     # Convert limit and offset to integers directly to prevent pagination injection
@@ -371,7 +371,7 @@ def get_paginated_tds(limit, offset, sort_by, sort_order):
                 if sort_by
                 else ""
             ),
-            orderby_direction=safe_sort_order,
+            orderby_direction=safe_sort_order if safe_sort_order else "ASC",
         ),
     )
     if resp.status_code not in [200, 201, 204]:
@@ -388,6 +388,9 @@ def get_paginated_tds(limit, offset, sort_by, sort_order):
                     contexts[result["graph"]["value"]],
                 )
             )
+        # Wait for all tasks to complete
+        for task in concurrent.futures.as_completed(tasks):
+            task.result()  # Ensure all tasks complete and propagate any exceptions
 
     return all_tds
 

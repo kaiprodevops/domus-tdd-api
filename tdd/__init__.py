@@ -286,14 +286,14 @@ def register_routes(app):
 
         sort_by = request.args.get("sort_by")
         sort_order = request.args.get("sort_order")
-
-        sort_order = validate_sort_order(sort_order)
+        if sort_order is not None:
+            sort_order = validate_sort_order(sort_order)
 
         number_total = get_total_number()
 
         sort_params = {}
         if sort_order:
-            sort_params["sort_order"] = sort_order
+            sort_params["sort_order"] = sort_order.lower()
         if sort_by:
             sort_params["sort_by"] = sort_by
 
