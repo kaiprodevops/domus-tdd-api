@@ -70,6 +70,7 @@ from tdd.common import (
     frame_nt_content,
     get_id_description,
 )
+from .validators import validate_uri
 
 with files(__package__).joinpath("data/td-json-schema-validation.json").open() as strm:
     schema = json.load(strm)
@@ -107,7 +108,7 @@ def use_custom_context(ld_content):
     # No need for now, since the published context is up to date
     overwrite_thing_context(ld_content)
 
-    # replace discovery context uri witht the fixed discovery context
+    # replace discovery context uri with the fixed discovery context
     overwrite_discovery_context(ld_content)
 
     return ld_content
@@ -161,8 +162,10 @@ def validate_tds(tds):
 
 
 def get_already_existing_td(uri):
+    # Upstream validation: Ensure URI is safe before injecting into SPARQL template
+    safe_uri = validate_uri(uri)
     resp = query(
-        GET_TD_CREATION_DATE.format(uri=uri),
+        GET_TD_CREATION_DATE.format(uri=safe_uri),
     )
     if resp.status_code == 200:
         if len(resp.json()["results"]["bindings"]) > 0:
@@ -183,6 +186,8 @@ def put_td_rdf_in_sparql(
     if uri is None:
         raise RDFValidationError(f"Did not find any {TD['Thing']}")
 
+    safe_uri = validate_uri(uri)
+
     if check_schema:
         ontology_graph = create_binded_graph()
         with path("tdd.data", "td.ttl") as onto_path:
@@ -200,37 +205,38 @@ def put_td_rdf_in_sparql(
             raise RDFValidationError(
                 "The RDF triples are not conform with the SHACL validation : \n"
                 f" {text_reports}",
-                td_id=uri,
+                td_id=safe_uri,
                 errors=graph_reports,
                 td_graph=g,
             )
 
-    registration = get_registration_dict(uri, g)
-    delete_registration_information(uri, g)
+    registration = get_registration_dict(safe_uri, g)
+    delete_registration_information(safe_uri, g)
 
-    created_date = get_already_existing_td(uri)
+    created_date = get_already_existing_td(safe_uri)
     registration = update_registration(registration, created_date, CONFIG["MAX_TTL"])
-    for triple in yield_registration_triples(uri, registration):
+    for triple in yield_registration_triples(safe_uri, registration):
         g.add(triple)
     put_rdf_in_sparql(
         g,
-        uri,
+        safe_uri,
         [DEFAULT_THING_CONTEXT_URI, DEFAULT_DISCOVERY_CONTEXT_URI],
         delete_if_exists,
         ONTOLOGY,
         forced_type=TYPE,
     )
-    return (created_date is not None, uri)
+    return (created_date is not None, safe_uri)
 
 
 def get_td_description(id, content_type="application/td+json", context=None):
+    safe_id = validate_uri(id)
     if not content_type.endswith("json"):
-        return get_id_description(id, content_type, ONTOLOGY)
-    content = get_id_description(id, "application/n-triples", ONTOLOGY)
+        return get_id_description(safe_id, content_type, ONTOLOGY)
+    content = get_id_description(safe_id, "application/n-triples", ONTOLOGY)
     if not context:
-        context = get_context(id, ONTOLOGY)
+        context = get_context(safe_id, ONTOLOGY)
     try:
-        td_description = frame_td_nt_content(id, content, context)
+        td_description = frame_td_nt_content(safe_id, content, context)
         return td_description
     except ExpireTDError:
         return ""
@@ -245,7 +251,8 @@ def put_td_json_in_sparql(td_content, uri=None, delete_if_exists=True):
     registration = td_content.get("registration", {})
     td_content = sanitize_td(td_content)
     original_context = copy(td_content["@context"])
-    uri = uri if uri is not None else td_content["id"]
+    # Upstream validation: Sanitize the URI whether it comes from args or the payload ID
+    uri = validate_uri(uri if uri is not None else td_content["id"])
     td_content = use_custom_context(td_content)
 
     created_date = get_already_existing_td(uri)
@@ -260,6 +267,23 @@ def put_td_json_in_sparql(td_content, uri=None, delete_if_exists=True):
 
 
 def delete_graphs(ids):
+    """
+    Delete multiple graphs by their IDs.
+
+    Args:
+        ids: List of graph IDs to delete
+
+    Note:
+        This function is called with IDs from internal database queries
+        (e.g., expired TDs from clear_expired_td()). These IDs are trusted
+        internal values, not user input, so no external validation is needed.
+
+        Applying validate_uri() here would be incorrect because:
+        1. These URIs already passed validation when originally stored
+        2. Legitimate stored URIs might contain characters outside the strict
+           allowlist (e.g., certain URN formats)
+        3. Validation should only occur at the trust boundary (user input)
+    """
     graph_ids_str = ", ".join([f"<{graph_id}>" for graph_id in ids])
     delete_td_query = DELETE_GRAPHS.format(graph_ids_str=graph_ids_str)
     resp = query(delete_td_query, request_type="update")
@@ -322,18 +346,43 @@ ORDERBY = {
 
 
 def get_paginated_tds(limit, offset, sort_by, sort_order):
-    all_tds = []
+    """
+    Get a paginated list of Thing Descriptions.
+
+    Args:
+        limit (int): Maximum number of TDs to return (pre-validated at controller layer)
+        offset (int): Offset for pagination (pre-validated at controller layer)
+        sort_by (str): Field to sort by (pre-validated at controller layer)
+        sort_order (str): Sort direction "ASC" or "DESC" (pre-validated at controller layer)
+
+    Returns:
+        List[dict]: List of Thing Description dictionaries in the order specified by SPARQL query
+
+    Note:
+        All parameters are assumed to be pre-validated and type-converted at the
+        controller layer (__init__.py). No redundant validation is performed here.
+
+    Thread Safety:
+        Uses ThreadPoolExecutor for concurrent TD retrieval. Results are collected
+        in the main thread in the original task submission order to preserve the
+        SPARQL ORDER BY sequence.
+    """
     tasks = []
 
     def send_request(id, context):
-        td = get_td_description(id, context=context)
-        all_tds.append(td)
+        """
+        Fetch a single TD description.
+
+        Returns the TD instead of appending to a shared list for thread safety.
+        """
+        return get_td_description(id, context=context)
 
     contexts = get_all_contexts()
 
     if sort_by is not None and sort_by not in ORDERBY:
         raise OrderbyError(sort_by)
 
+    # No redundant validation - parameters already validated in __init__.py
     resp = query(
         GET_URI_BY_ONTOLOGY.format(
             limit=limit,
@@ -366,6 +415,10 @@ def get_paginated_tds(limit, offset, sort_by, sort_order):
                     contexts[result["graph"]["value"]],
                 )
             )
+        # Wait for all tasks to complete in submission order to preserve SPARQL ORDER BY
+        all_tds = []
+        for task in tasks:
+            all_tds.append(task.result())
 
     return all_tds
 

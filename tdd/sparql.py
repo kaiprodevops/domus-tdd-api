@@ -18,7 +18,6 @@ import httpx
 import atexit
 from flask import Response
 
-
 from .config import CONFIG
 from .errors import FusekiError
 
@@ -223,15 +222,15 @@ def query(
 
     if route != "":
         sparqlendpoint = urljoin(f"{sparqlendpoint}/", route)
+
     if request_type == "query":
         # Utilize the global HTTP client for connection pooling.
-        # Note: SPARQL injection mitigation must be handled upstream by explicit input validators.
         resp = http_client.post(
             sparqlendpoint,
             data={"query": querystring},
             headers=headers,
         )
-    if request_type == "update":
+    elif request_type == "update":
         if CONFIG["ENDPOINT_TYPE"] == "GRAPHDB":
             sparqlendpoint = urljoin(f"{sparqlendpoint}/", "statements")
         # Utilize the global HTTP client for update operations to maintain low latency.
@@ -239,6 +238,8 @@ def query(
             sparqlendpoint,
             data={"update": querystring},
         )
+    else:
+        raise ValueError(f"Invalid request_type: {request_type}")
 
     if resp.status_code not in status_codes:
         raise FusekiError(resp)
@@ -246,4 +247,15 @@ def query(
 
 
 def delete_named_graph(named_graph):
+    """
+    Delete a named graph from the SPARQL endpoint.
+
+    Args:
+        named_graph: Graph URI to delete (from internal system, not user input)
+
+    Note:
+        This function is called with graph URIs from internal database queries,
+        not from user input. No external validation is needed as these are
+        trusted internal values that already passed validation when stored.
+    """
     query(f"DROP SILENT GRAPH <{named_graph}>", request_type="update")
