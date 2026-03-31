@@ -292,7 +292,8 @@ def register_routes(app):
         number_total = get_total_number()
 
         sort_params = {}
-        if sort_order:
+        if sort_order is not None:
+            # Use lowercase for URL parameters (API convention)
             sort_params["sort_order"] = sort_order.lower()
         if sort_by:
             sort_params["sort_by"] = sort_by

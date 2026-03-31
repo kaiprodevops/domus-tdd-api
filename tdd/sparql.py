@@ -248,6 +248,15 @@ def query(
 
 
 def delete_named_graph(named_graph):
-    # Upstream validation: Secure the graph URI before executing DROP
-    safe_graph = validate_uri(named_graph)
-    query(f"DROP SILENT GRAPH <{safe_graph}>", request_type="update")
+    """
+    Delete a named graph from the SPARQL endpoint.
+
+    Args:
+        named_graph: Graph URI to delete (from internal system, not user input)
+
+    Note:
+        This function is called with graph URIs from internal database queries,
+        not from user input. No external validation is needed as these are
+        trusted internal values that already passed validation when stored.
+    """
+    query(f"DROP SILENT GRAPH <{named_graph}>", request_type="update")

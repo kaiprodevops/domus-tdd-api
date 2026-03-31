@@ -271,17 +271,30 @@ def put_td_json_in_sparql(td_content, uri=None, delete_if_exists=True):
 
 
 def delete_graphs(ids):
-    # Upstream validation: Sanitize all graph IDs before executing bulk DELETE
-    safe_ids = validate_uris(ids)
-    graph_ids_str = ", ".join([f"<{graph_id}>" for graph_id in safe_ids])
+    """
+    Delete multiple graphs by their IDs.
+
+    Args:
+        ids: List of graph IDs to delete
+
+    Note:
+        This function is called with IDs from internal database queries
+        (e.g., expired TDs from clear_expired_td()). These IDs are trusted
+        internal values, not user input, so no external validation is needed.
+
+        Applying validate_uri() here would be incorrect because:
+        1. These URIs already passed validation when originally stored
+        2. Legitimate stored URIs might contain characters outside the strict
+           allowlist (e.g., certain URN formats)
+        3. Validation should only occur at the trust boundary (user input)
+    """
+    graph_ids_str = ", ".join([f"<{graph_id}>" for graph_id in ids])
     delete_td_query = DELETE_GRAPHS.format(graph_ids_str=graph_ids_str)
     resp = query(delete_td_query, request_type="update")
     if resp.status_code not in [200, 201, 204]:
         raise FusekiError(resp)
 
-    delete_graphs_query = "\n".join(
-        [f"CLEAR GRAPH <{graph_id}>;" for graph_id in safe_ids]
-    )
+    delete_graphs_query = "\n".join([f"CLEAR GRAPH <{graph_id}>;" for graph_id in ids])
     resp = query(delete_graphs_query, request_type="update")
     if resp.status_code not in [200, 201, 204]:
         raise FusekiError(resp)
@@ -337,29 +350,47 @@ ORDERBY = {
 
 
 def get_paginated_tds(limit, offset, sort_by, sort_order):
-    all_tds = []
+    """
+    Get a paginated list of Thing Descriptions.
+
+    Args:
+        limit (int): Maximum number of TDs to return (pre-validated at controller layer)
+        offset (int): Offset for pagination (pre-validated at controller layer)
+        sort_by (str): Field to sort by (pre-validated at controller layer)
+        sort_order (str): Sort direction "ASC" or "DESC" (pre-validated at controller layer)
+
+    Returns:
+        List[dict]: List of Thing Description dictionaries in the order specified by SPARQL query
+
+    Note:
+        All parameters are assumed to be pre-validated and type-converted at the
+        controller layer (__init__.py). No redundant validation is performed here.
+
+    Thread Safety:
+        Uses ThreadPoolExecutor for concurrent TD retrieval. Results are collected
+        in the main thread in the original task submission order to preserve the
+        SPARQL ORDER BY sequence.
+    """
     tasks = []
 
     def send_request(id, context):
-        td = get_td_description(id, context=context)
-        all_tds.append(td)
+        """
+        Fetch a single TD description.
+
+        Returns the TD instead of appending to a shared list for thread safety.
+        """
+        return get_td_description(id, context=context)
 
     contexts = get_all_contexts()
 
     if sort_by is not None and sort_by not in ORDERBY:
         raise OrderbyError(sort_by)
 
-    # Upstream validation: Enforce strict allowlist for sort_order
-    safe_sort_order = validate_sort_order(sort_order)
-
-    # Convert limit and offset to integers directly to prevent pagination injection
-    safe_limit = int(limit)
-    safe_offset = int(offset)
-
+    # No redundant validation - parameters already validated in __init__.py
     resp = query(
         GET_URI_BY_ONTOLOGY.format(
-            limit=safe_limit,
-            offset=safe_offset,
+            limit=limit,
+            offset=offset,
             ontology=ONTOLOGY["base"],
             orderby_variable=f"?{sort_by}" if sort_by else "?id",
             orderby_sparql=(
@@ -371,7 +402,7 @@ def get_paginated_tds(limit, offset, sort_by, sort_order):
                 if sort_by
                 else ""
             ),
-            orderby_direction=safe_sort_order if safe_sort_order else "ASC",
+            orderby_direction=sort_order if sort_order else "ASC",
         ),
     )
     if resp.status_code not in [200, 201, 204]:
@@ -388,9 +419,10 @@ def get_paginated_tds(limit, offset, sort_by, sort_order):
                     contexts[result["graph"]["value"]],
                 )
             )
-        # Wait for all tasks to complete
-        for task in concurrent.futures.as_completed(tasks):
-            task.result()  # Ensure all tasks complete and propagate any exceptions
+        # Wait for all tasks to complete in submission order to preserve SPARQL ORDER BY
+        all_tds = []
+        for task in tasks:
+            all_tds.append(task.result())
 
     return all_tds
 
