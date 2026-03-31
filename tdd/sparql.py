@@ -20,7 +20,6 @@ from flask import Response
 
 from .config import CONFIG
 from .errors import FusekiError
-from tdd.validators import validate_uri
 
 # Initialize a globally pooled, secure HTTP client for SPARQL endpoint communication.
 # Adheres to enterprise security best practices: bounded resource limits and explicit timeouts.

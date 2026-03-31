@@ -70,11 +70,7 @@ from tdd.common import (
     frame_nt_content,
     get_id_description,
 )
-from .validators import (
-    validate_uri,
-    validate_uris,
-    validate_sort_order,
-)
+from .validators import validate_uri
 
 with files(__package__).joinpath("data/td-json-schema-validation.json").open() as strm:
     schema = json.load(strm)
