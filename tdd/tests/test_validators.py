@@ -11,9 +11,8 @@
 * https://www.w3.org/Consortium/Legal/2015/copyright-software-and-document.
 *
 * SPDX-License-Identifier: EPL-2.0 OR W3C-20150513
-********************************************************************************"""
+********************************************************************************
 
-"""
 Unit tests for security validators module.
 
 These tests ensure that the validation layer correctly blocks SPARQL injection
@@ -272,7 +271,10 @@ class TestValidateSortOrder:
             assert value not in exc_info.value.message
 
     def test_reject_sparql_injection_attempts(self):
-        """Test that SPARQL injection attempts through sort_order are blocked without echoing input."""
+        """
+        Test that SPARQL injection attempts through sort_order are
+        blocked without echoing input.
+        """
         injection_attempts = [
             "ASC; DROP GRAPH <ALL>",
             "DESC) UNION (SELECT",
