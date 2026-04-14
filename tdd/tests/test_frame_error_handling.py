@@ -14,7 +14,6 @@
 ********************************************************************************"""
 
 import pytest
-import httpx
 from unittest.mock import patch
 from tdd.errors import ExternalDependencyError
 from tdd.td import frame_td_nt_content
