@@ -234,8 +234,13 @@ class ExternalDependencyError(AppException):
     status_code = 502
 
     def __init__(self, details=""):
+        # Don't include English details in non-English messages for consistency
         super().__init__(
-            message=f"An upstream dependency failed to process the data. {details}",
-            message_fr=f"Une dépendance en amont n'a pas pu traiter les données. {details}",
-            message_de=f"Eine Upstream-Abhängigkeit konnte die Daten nicht verarbeiten. {details}",
+            message=(
+                f"An upstream dependency failed to process the data. {details}"
+                if details
+                else "An upstream dependency failed to process the data."
+            ),
+            message_fr="Une dépendance en amont n'a pas pu traiter les données.",
+            message_de="Eine Upstream-Abhängigkeit konnte die Daten nicht verarbeiten.",
         )

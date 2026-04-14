@@ -14,6 +14,7 @@
 ********************************************************************************"""
 
 import pytest
+import httpx
 from unittest.mock import patch
 from tdd.errors import ExternalDependencyError
 from tdd.td import frame_td_nt_content
@@ -131,6 +132,39 @@ def test_frame_nt_content_log_injection_prevention(mock_log_error, mock_popen):
     mock_log_error.assert_called_once()
     logged_message = mock_log_error.call_args[0][0]
     # The repr() should escape the newlines as \n
-    assert "\\n" in logged_message or "'" in logged_message
+    assert "\\n" in logged_message
     # The raw newline should NOT be in the log
     assert "\nFAKE LOG ENTRY" not in logged_message
+
+
+# Integration Test: Verify ExternalDependencyError returns HTTP 502
+def test_external_dependency_error_returns_502(test_client):
+    """Integration test: Verify that ExternalDependencyError is properly handled as HTTP 502"""
+    from unittest.mock import patch
+    from tdd.errors import ExternalDependencyError
+
+    # Patch get_td_description to raise ExternalDependencyError
+    with patch("tdd.get_td_description") as mock_get_td:
+        mock_get_td.side_effect = ExternalDependencyError(
+            "JSON-LD framing process failed."
+        )
+
+        # Make GET request to /things/{id}
+        response = test_client.get("/things/urn:test:thing")
+
+        # Verify HTTP 502 status
+        assert response.status_code == 502
+
+        # Verify Content-Type is application/problem+json
+        assert response.content_type == "application/problem+json"
+
+        # Verify error response structure
+        error_response = response.json
+        assert error_response["title"] == "External Dependency Error"
+        assert error_response["status"] == 502
+        assert "upstream dependency failed" in error_response["detail"].lower()
+
+        # Verify no internal details are leaked (English message only)
+        assert "JSON-LD framing process failed" in error_response["detail"]
+        assert "frame-jsonld.js" not in error_response["detail"]
+        assert "stderr" not in error_response["detail"]

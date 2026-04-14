@@ -32,11 +32,11 @@ rl.on('line', async (input) => {
     });
     const framed = await jsonldFrame(doc, framedata);
     console.log(JSON.stringify(framed, null, 2));
+    rl.close();
   } catch (error) {
     // Best practice: write to stderr and return non-zero exit code
     console.error(`JSON-LD Framing failed: ${error.message}`);
-    process.exit(1);
-  } finally {
     rl.close();
+    process.exit(1);
   }
 });

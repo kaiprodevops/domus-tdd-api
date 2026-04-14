@@ -329,7 +329,11 @@ def frame_td_nt_content(td_id, nt_content, original_context):
     except json.decoder.JSONDecodeError as exc:
         # Intercept destructive deserialization exception
         # Don't expose the raw exception message to avoid information leakage
-        logging.error(f"JSON decode failed for TD {td_id}: {repr(str(exc)[:100])}")
+        # Sanitize td_id to prevent log injection
+        sanitized_td_id = repr(str(td_id)[:200])
+        logging.error(
+            f"JSON decode failed for TD {sanitized_td_id}: {repr(str(exc)[:100])}"
+        )
         raise ExternalDependencyError("Invalid JSON output from framing engine.")
 
     jsonld_response["@context"] = original_context
